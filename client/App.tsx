@@ -1,6 +1,6 @@
 import "./global.css";
 
-import React from "react";
+import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import {
   BrowserRouter,
@@ -775,7 +775,7 @@ const BottomBar = () => {
 
 // Main App Component (CoinKrazy.com)
 const App = () => {
-  React.useEffect(() => {
+  useEffect(() => {
     console.log(
       "🎰 CoinKrazy.com loaded successfully - " + new Date().toISOString(),
     );

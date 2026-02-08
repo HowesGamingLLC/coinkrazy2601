@@ -25,7 +25,6 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react({
-      fastRefresh: true,
       include: "**/*.{jsx,tsx}",
     }),
     expressPlugin()
