@@ -27,7 +27,7 @@ export default defineConfig(({ mode }) => ({
     react({
       include: "**/*.{jsx,tsx}",
     }),
-    expressPlugin()
+    expressPlugin(),
   ],
   resolve: {
     alias: {
@@ -45,9 +45,9 @@ export default defineConfig(({ mode }) => ({
   },
   esbuild: {
     target: "es2020",
-    logOverride: { 
-      'this-is-undefined-in-esm': 'silent' 
-    }
+    logOverride: {
+      "this-is-undefined-in-esm": "silent",
+    },
   },
 }));
 
