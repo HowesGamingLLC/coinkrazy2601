@@ -1,6 +1,8 @@
 import express from "express";
 import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import databaseService from "../services/database.js";
+import { authenticateToken, requireAdmin } from "../middleware/auth.js";
 import bankingRoutes from "./banking.js";
 import scratchCardRoutes from "./scratchCards.js";
 
@@ -66,11 +68,17 @@ router.post("/auth/login", async (req, res) => {
       [user.id],
     );
 
-    // Generate session token
-    const token =
-      Math.random().toString(36).substring(2, 15) +
-      Math.random().toString(36).substring(2, 15) +
-      Date.now().toString(36);
+    // Generate JWT token
+    const token = jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role
+      },
+      process.env.JWT_SECRET || "your-secret-key",
+      { expiresIn: "7d" }
+    );
 
     // Clean user object (remove sensitive data)
     const cleanUser = {
@@ -290,8 +298,59 @@ router.post("/games/:gameId/stats", async (req, res) => {
   }
 });
 
+// Game management endpoints (admin only)
+router.patch("/games/:gameId", requireAdmin, async (req, res) => {
+  try {
+    const gameId = req.params.gameId;
+    const { is_active, is_featured, rtp } = req.body;
+
+    const updates = [];
+    const values = [];
+    let paramCount = 1;
+
+    if (is_active !== undefined) {
+      updates.push(`is_active = $${paramCount}`);
+      values.push(is_active);
+      paramCount++;
+    }
+
+    if (is_featured !== undefined) {
+      updates.push(`is_featured = $${paramCount}`);
+      values.push(is_featured);
+      paramCount++;
+    }
+
+    if (rtp !== undefined) {
+      updates.push(`rtp = $${paramCount}`);
+      values.push(rtp);
+      paramCount++;
+    }
+
+    updates.push(`updated_at = CURRENT_TIMESTAMP`);
+    values.push(gameId);
+
+    const query = `
+      UPDATE games
+      SET ${updates.join(", ")}
+      WHERE game_id = $${paramCount}
+      RETURNING *
+    `;
+
+    const result = await databaseService.query(query, values);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Game not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error updating game:", error);
+    res.status(500).json({ error: "Failed to update game" });
+  }
+});
+
 // Admin endpoints
-router.get("/admin/users", async (req, res) => {
+router.get("/admin/users", requireAdmin, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit as string) || 50;
     const offset = parseInt(req.query.offset as string) || 0;
@@ -303,7 +362,7 @@ router.get("/admin/users", async (req, res) => {
   }
 });
 
-router.get("/admin/transactions", async (req, res) => {
+router.get("/admin/transactions", requireAdmin, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit as string) || 50;
     const transactions = await databaseService.getRecentTransactions(limit);
@@ -314,7 +373,7 @@ router.get("/admin/transactions", async (req, res) => {
   }
 });
 
-router.get("/admin/stats", async (req, res) => {
+router.get("/admin/stats", requireAdmin, async (req, res) => {
   try {
     const stats = await databaseService.getLiveStats();
     res.json(stats);
@@ -324,7 +383,7 @@ router.get("/admin/stats", async (req, res) => {
   }
 });
 
-router.post("/admin/stats/:statName", async (req, res) => {
+router.post("/admin/stats/:statName", requireAdmin, async (req, res) => {
   try {
     const { value, metadata } = req.body;
     const stat = await databaseService.updateLiveStat(
@@ -339,8 +398,90 @@ router.post("/admin/stats/:statName", async (req, res) => {
   }
 });
 
-// AI Employee endpoints
-router.get("/ai-employees", async (req, res) => {
+// User management endpoints (admin only)
+router.patch("/users/:userId", requireAdmin, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.userId);
+    const { status, kyc_status, first_name, last_name } = req.body;
+
+    const updates = [];
+    const values = [];
+    let paramCount = 1;
+
+    if (status !== undefined) {
+      updates.push(`status = $${paramCount}`);
+      values.push(status);
+      paramCount++;
+    }
+
+    if (kyc_status !== undefined) {
+      updates.push(`kyc_status = $${paramCount}`);
+      values.push(kyc_status);
+      paramCount++;
+    }
+
+    if (first_name !== undefined) {
+      updates.push(`first_name = $${paramCount}`);
+      values.push(first_name);
+      paramCount++;
+    }
+
+    if (last_name !== undefined) {
+      updates.push(`last_name = $${paramCount}`);
+      values.push(last_name);
+      paramCount++;
+    }
+
+    updates.push(`updated_at = CURRENT_TIMESTAMP`);
+    values.push(userId);
+
+    const query = `
+      UPDATE users
+      SET ${updates.join(", ")}
+      WHERE id = $${paramCount}
+      RETURNING id, email, username, status, kyc_status, first_name, last_name, role, created_at, updated_at
+    `;
+
+    const result = await databaseService.query(query, values);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error updating user:", error);
+    res.status(500).json({ error: "Failed to update user" });
+  }
+});
+
+router.delete("/users/:userId", requireAdmin, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.userId);
+
+    // Soft delete - set status to banned instead of actually deleting
+    const query = `
+      UPDATE users
+      SET status = 'banned', updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING id, email, username, status
+    `;
+
+    const result = await databaseService.query(query, [userId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json({ success: true, message: "User deleted successfully", user: result.rows[0] });
+  } catch (error) {
+    console.error("Error deleting user:", error);
+    res.status(500).json({ error: "Failed to delete user" });
+  }
+});
+
+// AI Employee endpoints (admin only)
+router.get("/ai-employees", requireAdmin, async (req, res) => {
   try {
     const employees = await databaseService.getAIEmployees();
     res.json(employees);
@@ -350,7 +491,7 @@ router.get("/ai-employees", async (req, res) => {
   }
 });
 
-router.post("/ai-employees/:id/metrics", async (req, res) => {
+router.post("/ai-employees/:id/metrics", requireAdmin, async (req, res) => {
   try {
     const { tasksCompleted, moneySaved } = req.body;
     const employee = await databaseService.updateAIEmployeeMetrics(
@@ -365,8 +506,8 @@ router.post("/ai-employees/:id/metrics", async (req, res) => {
   }
 });
 
-// Notification endpoints
-router.post("/notifications", async (req, res) => {
+// Notification endpoints (admin only)
+router.post("/notifications", requireAdmin, async (req, res) => {
   try {
     const { title, message, type, fromAI, actionRequired, actionUrl } =
       req.body;
@@ -385,7 +526,7 @@ router.post("/notifications", async (req, res) => {
   }
 });
 
-router.get("/notifications/unread", async (req, res) => {
+router.get("/notifications/unread", requireAdmin, async (req, res) => {
   try {
     const notifications = await databaseService.getUnreadNotifications();
     res.json(notifications);
@@ -395,7 +536,7 @@ router.get("/notifications/unread", async (req, res) => {
   }
 });
 
-router.post("/notifications/:id/read", async (req, res) => {
+router.post("/notifications/:id/read", requireAdmin, async (req, res) => {
   try {
     const notification = await databaseService.markNotificationRead(
       parseInt(req.params.id),
@@ -437,7 +578,7 @@ router.get("/coin-packages/:id", async (req, res) => {
   }
 });
 
-router.post("/coin-packages", async (req, res) => {
+router.post("/coin-packages", requireAdmin, async (req, res) => {
   try {
     const {
       name,
@@ -480,7 +621,7 @@ router.post("/coin-packages", async (req, res) => {
   }
 });
 
-router.patch("/coin-packages/:id", async (req, res) => {
+router.patch("/coin-packages/:id", requireAdmin, async (req, res) => {
   try {
     const packageId = parseInt(req.params.id);
     const updates = req.body;
@@ -523,7 +664,7 @@ router.patch("/coin-packages/:id", async (req, res) => {
   }
 });
 
-router.delete("/coin-packages/:id", async (req, res) => {
+router.delete("/coin-packages/:id", requireAdmin, async (req, res) => {
   try {
     const packageId = parseInt(req.params.id);
     const query = "DELETE FROM coin_packages WHERE id = $1 RETURNING *";
@@ -842,6 +983,137 @@ router.post("/wheel-spins/:userId", async (req, res) => {
   } catch (error) {
     console.error("Error creating wheel spin:", error);
     res.status(500).json({ error: "Failed to create wheel spin" });
+  }
+});
+
+// CMS Endpoints (Admin only)
+router.get("/cms/pages", requireAdmin, async (req, res) => {
+  try {
+    const query = "SELECT * FROM cms_pages WHERE deleted_at IS NULL ORDER BY updated_at DESC";
+    const result = await databaseService.query(query);
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error getting CMS pages:", error);
+    res.status(500).json({ error: "Failed to get CMS pages" });
+  }
+});
+
+router.post("/cms/pages", requireAdmin, async (req, res) => {
+  try {
+    const { slug, title, content, published } = req.body;
+    const query = `
+      INSERT INTO cms_pages (slug, title, content, published)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+    `;
+    const result = await databaseService.query(query, [slug, title, content, published !== false]);
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error("Error creating CMS page:", error);
+    res.status(500).json({ error: "Failed to create CMS page" });
+  }
+});
+
+router.patch("/cms/pages/:id", requireAdmin, async (req, res) => {
+  try {
+    const { slug, title, content, published } = req.body;
+    const query = `
+      UPDATE cms_pages
+      SET slug = COALESCE($1, slug), title = COALESCE($2, title),
+          content = COALESCE($3, content), published = COALESCE($4, published),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $5
+      RETURNING *
+    `;
+    const result = await databaseService.query(query, [slug, title, content, published, req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: "Page not found" });
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error updating CMS page:", error);
+    res.status(500).json({ error: "Failed to update CMS page" });
+  }
+});
+
+// Admin Role Management Endpoints (Super admin only)
+router.patch("/users/:userId/role", requireAdmin, async (req, res) => {
+  try {
+    const { role } = req.body;
+
+    // Validate role
+    if (!["user", "staff", "admin"].includes(role)) {
+      return res.status(400).json({ error: "Invalid role" });
+    }
+
+    const query = `
+      UPDATE users
+      SET role = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+      RETURNING id, email, username, role
+    `;
+    const result = await databaseService.query(query, [role, req.params.userId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error updating user role:", error);
+    res.status(500).json({ error: "Failed to update user role" });
+  }
+});
+
+// KYC/Compliance Endpoints (Admin only)
+router.get("/kyc/pending", requireAdmin, async (req, res) => {
+  try {
+    const query = `
+      SELECT id, email, username, kyc_status, kyc_documents, created_at
+      FROM users
+      WHERE kyc_status = 'pending' OR kyc_status = 'submitted'
+      ORDER BY created_at DESC
+      LIMIT 100
+    `;
+    const result = await databaseService.query(query);
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error getting pending KYC:", error);
+    res.status(500).json({ error: "Failed to get pending KYC requests" });
+  }
+});
+
+router.patch("/kyc/:userId/approve", requireAdmin, async (req, res) => {
+  try {
+    const query = `
+      UPDATE users
+      SET kyc_status = 'verified', updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING id, email, username, kyc_status
+    `;
+    const result = await databaseService.query(query, [req.params.userId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: "User not found" });
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error approving KYC:", error);
+    res.status(500).json({ error: "Failed to approve KYC" });
+  }
+});
+
+router.patch("/kyc/:userId/reject", requireAdmin, async (req, res) => {
+  try {
+    const { reason } = req.body;
+    const query = `
+      UPDATE users
+      SET kyc_status = 'rejected', kyc_documents = jsonb_set(kyc_documents, '{rejection_reason}', $1::jsonb),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+      RETURNING id, email, username, kyc_status
+    `;
+    const result = await databaseService.query(query, [JSON.stringify({ reason }), req.params.userId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: "User not found" });
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error rejecting KYC:", error);
+    res.status(500).json({ error: "Failed to reject KYC" });
   }
 });
 

@@ -15,7 +15,7 @@ import {
   AdminGame,
   AdminTransaction,
   AdminNotification,
-} from "@/services/adminServiceTemp";
+} from "@/services/adminService";
 import AIEmployeeManager from "@/components/AIEmployeeManager";
 import CasinoAnalytics from "@/components/CasinoAnalytics";
 import CasinoBanking from "@/components/CasinoBanking";

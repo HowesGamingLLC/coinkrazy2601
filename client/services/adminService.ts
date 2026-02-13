@@ -1,4 +1,4 @@
-// Admin service using API calls
+// Admin service for accessing admin-only API endpoints
 import { authService } from "./authService";
 
 export interface AdminUser {
@@ -7,71 +7,89 @@ export interface AdminUser {
   email: string;
   status: string;
   kyc_status: string;
-  gold_coins: number;
-  sweeps_coins: number;
+  gold_coins?: number;
+  sweeps_coins?: number;
   created_at: string;
-  last_login: string;
+  last_login?: string;
   role: string;
+  first_name?: string;
+  last_name?: string;
+  is_email_verified?: boolean;
 }
 
 export interface AdminTransaction {
   id: number;
-  username: string;
-  email: string;
+  user_id?: number;
+  username?: string;
+  email?: string;
   transaction_type: string;
   currency: string;
   amount: number;
   status: string;
   created_at: string;
-  description: string;
+  description?: string;
+  payment_method?: string;
 }
 
 export interface AdminGame {
   id: number;
-  game_id: string;
+  game_id?: string;
   name: string;
-  provider: string;
-  category: string;
-  rtp: number;
+  provider?: string;
+  category?: string;
+  rtp?: number;
   is_active: boolean;
-  is_featured: boolean;
-  total_profit_gc: number;
-  total_profit_sc: number;
-  current_jackpot_calculated: number;
-  current_jackpot_sc_calculated: number;
-  total_plays: number;
-  total_players: number;
+  is_featured?: boolean;
+  total_profit_gc?: number;
+  total_profit_sc?: number;
+  current_jackpot_calculated?: number;
+  current_jackpot_sc_calculated?: number;
+  total_plays?: number;
+  total_players?: number;
 }
 
 export interface AdminStats {
-  totalUsers: number;
-  activeNow: number;
-  pendingKyc: number;
-  revenue24h: number;
-  pendingWithdrawals: number;
-  systemHealth: number;
-  fraudAlerts: number;
-  totalGC: number;
-  totalSC: number;
-  activeGames: number;
+  totalUsers?: number;
+  activeNow?: number;
+  pendingKyc?: number;
+  revenue24h?: number;
+  pendingWithdrawals?: number;
+  systemHealth?: number;
+  fraudAlerts?: number;
+  totalGC?: number;
+  totalSC?: number;
+  activeGames?: number;
+  [key: string]: any;
 }
 
 export interface AdminNotification {
   id: number;
   title: string;
   message: string;
-  notification_type: string;
-  priority: number;
+  notification_type?: string;
+  type?: string;
+  priority?: number;
   from_ai_employee?: number;
+  admin_user_id?: number;
   ai_name?: string;
-  read_status: boolean;
-  action_required: boolean;
+  read_status?: boolean;
+  read?: boolean;
+  action_required?: boolean;
   action_url?: string;
   created_at: string;
 }
 
+interface UpdateUserStatusRequest {
+  newStatus: "active" | "suspended" | "banned" | "pending_verification";
+}
+
+interface ToggleGameRequest {
+  isActive: boolean;
+}
+
 class AdminService {
   private static instance: AdminService;
+  private baseUrl = "/api";
 
   static getInstance(): AdminService {
     if (!AdminService.instance) {
@@ -86,36 +104,48 @@ class AdminService {
     }
   }
 
+  private getAuthHeaders(): HeadersInit {
+    const token = localStorage.getItem("coinkrazy_token") || "";
+    return {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  }
+
+  private async apiCall<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<T> {
+    try {
+      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+        ...options,
+        headers: {
+          ...this.getAuthHeaders(),
+          ...options.headers,
+        },
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        authService.logout();
+        throw new Error("Admin access denied. Please log in again.");
+      }
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || `API Error: ${response.status}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error(`API call failed for ${endpoint}:`, error);
+      throw error;
+    }
+  }
+
   async getDashboardStats(): Promise<AdminStats> {
     this.checkAdminAccess();
-
     try {
-      const [usersResponse, gamesResponse, statsResponse, transactionsResponse, notificationsResponse] = await Promise.all([
-        fetch("/api/admin/users?limit=1"),
-        fetch("/api/games/active"),
-        fetch("/api/admin/stats"),
-        fetch("/api/admin/transactions?limit=1"),
-        fetch("/api/notifications/unread")
-      ]);
-
-      const users = await usersResponse.json();
-      const games = await gamesResponse.json();
-      const stats = await statsResponse.json();
-      const transactions = await transactionsResponse.json();
-      const notifications = await notificationsResponse.json();
-
-      return {
-        totalUsers: stats.total_users?.value || 0,
-        activeNow: stats.active_players?.value || 0,
-        pendingKyc: 0, // Will need to implement
-        revenue24h: 0, // Will need to calculate
-        pendingWithdrawals: 0, // Will need to implement
-        systemHealth: 99.9, // Placeholder
-        fraudAlerts: notifications.filter((n: any) => n.notification_type === 'error').length || 0,
-        totalGC: 0, // Will need to implement
-        totalSC: 0, // Will need to implement
-        activeGames: Array.isArray(games) ? games.length : 0,
-      };
+      return await this.apiCall("/admin/stats");
     } catch (error) {
       console.error("Failed to fetch dashboard stats:", error);
       throw error;
@@ -125,156 +155,40 @@ class AdminService {
   async getAllUsers(
     page: number = 1,
     limit: number = 50,
-    search?: string,
+    search?: string
   ): Promise<{ users: AdminUser[]; total: number }> {
     this.checkAdminAccess();
-
     try {
       const offset = (page - 1) * limit;
-      let whereClause = "";
-      let params: any[] = [limit, offset];
-
-      if (search) {
-        whereClause = "WHERE u.email ILIKE $3 OR u.username ILIKE $3";
-        params.push(`%${search}%`);
-      }
-
-      const [usersResult, countResult] = await Promise.all([
-        databaseService.query(
-          `
-          SELECT u.*, ub.gold_coins, ub.sweeps_coins
-          FROM users u
-          LEFT JOIN user_balances ub ON u.id = ub.user_id
-          ${whereClause}
-          ORDER BY u.created_at DESC
-          LIMIT $1 OFFSET $2
-        `,
-          params,
-        ),
-        databaseService.query(
-          `
-          SELECT COUNT(*) as total
-          FROM users u
-          ${whereClause}
-        `,
-          search ? [`%${search}%`] : [],
-        ),
-      ]);
-
-      return {
-        users: usersResult.rows,
-        total: parseInt(countResult.rows[0].total),
-      };
+      const params = new URLSearchParams({ limit: limit.toString(), offset: offset.toString() });
+      if (search) params.append("search", search);
+      
+      const users = await this.apiCall<AdminUser[]>(
+        `/admin/users?${params.toString()}`
+      );
+      return { users: Array.isArray(users) ? users : [], total: users?.length || 0 };
     } catch (error) {
       console.error("Failed to fetch users:", error);
       throw error;
     }
   }
 
-  async updateUserStatus(userId: number, status: string): Promise<void> {
-    this.checkAdminAccess();
-
-    try {
-      await databaseService.query(
-        "UPDATE users SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
-        [status, userId],
-      );
-
-      // Log the action
-      await this.createAuditLog("UPDATE", "users", userId, { status });
-    } catch (error) {
-      console.error("Failed to update user status:", error);
-      throw error;
-    }
-  }
-
-  async updateUserKyc(
-    userId: number,
-    kycStatus: string,
-    notes?: string,
-  ): Promise<void> {
-    this.checkAdminAccess();
-
-    try {
-      await databaseService.query(
-        "UPDATE users SET kyc_status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
-        [kycStatus, userId],
-      );
-
-      // Log the action
-      await this.createAuditLog("UPDATE", "users", userId, {
-        kyc_status: kycStatus,
-        notes,
-      });
-    } catch (error) {
-      console.error("Failed to update user KYC:", error);
-      throw error;
-    }
-  }
-
   async getAllGames(): Promise<AdminGame[]> {
     this.checkAdminAccess();
-
     try {
-      const response = await fetch("/api/games");
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const games = await response.json();
-      return games;
+      return await this.apiCall("/games");
     } catch (error) {
       console.error("Failed to fetch games:", error);
       throw error;
     }
   }
 
-  async updateGameStatus(gameId: string, isActive: boolean): Promise<void> {
-    this.checkAdminAccess();
-
-    try {
-      await databaseService.query(
-        "UPDATE games SET is_active = $1, updated_at = CURRENT_TIMESTAMP WHERE game_id = $2",
-        [isActive, gameId],
-      );
-
-      // Log the action
-      await this.createAuditLog("UPDATE", "games", 0, {
-        game_id: gameId,
-        is_active: isActive,
-      });
-    } catch (error) {
-      console.error("Failed to update game status:", error);
-      throw error;
-    }
-  }
-
-  async updateGameRTP(gameId: string, rtp: number): Promise<void> {
-    this.checkAdminAccess();
-
-    try {
-      await databaseService.query(
-        "UPDATE games SET rtp = $1, updated_at = CURRENT_TIMESTAMP WHERE game_id = $2",
-        [rtp, gameId],
-      );
-
-      // Log the action
-      await this.createAuditLog("UPDATE", "games", 0, { game_id: gameId, rtp });
-    } catch (error) {
-      console.error("Failed to update game RTP:", error);
-      throw error;
-    }
-  }
-
   async getRecentTransactions(limit: number = 50): Promise<AdminTransaction[]> {
     this.checkAdminAccess();
-
     try {
-      const response = await fetch(`/api/admin/transactions?limit=${limit}`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const transactions = await response.json();
-      return transactions;
+      return await this.apiCall(
+        `/admin/transactions?limit=${limit}`
+      );
     } catch (error) {
       console.error("Failed to fetch transactions:", error);
       throw error;
@@ -283,189 +197,117 @@ class AdminService {
 
   async getAdminNotifications(): Promise<AdminNotification[]> {
     this.checkAdminAccess();
-
     try {
-      const response = await fetch("/api/notifications/unread");
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const notifications = await response.json();
-      return notifications;
+      return await this.apiCall("/notifications/unread");
     } catch (error) {
       console.error("Failed to fetch notifications:", error);
       throw error;
     }
   }
 
-  async markNotificationRead(notificationId: number): Promise<void> {
-    this.checkAdminAccess();
-
-    try {
-      await databaseService.query(
-        "UPDATE admin_notifications SET read_status = TRUE, read_at = CURRENT_TIMESTAMP WHERE id = $1",
-        [notificationId],
-      );
-    } catch (error) {
-      console.error("Failed to mark notification as read:", error);
-      throw error;
-    }
-  }
-
-  async createAdminNotification(
-    title: string,
-    message: string,
-    type: string,
-    priority: number = 1,
-  ): Promise<void> {
-    this.checkAdminAccess();
-
-    try {
-      await databaseService.createAdminNotification(
-        title,
-        message,
-        type,
-        1,
-        false,
-      ); // From LuckyAI
-    } catch (error) {
-      console.error("Failed to create notification:", error);
-      throw error;
-    }
-  }
-
-  async adjustUserBalance(
+  async updateUserStatus(
     userId: number,
-    gcAmount: number,
-    scAmount: number,
-    reason: string,
-  ): Promise<void> {
+    newStatus: string
+  ): Promise<AdminUser> {
     this.checkAdminAccess();
-
     try {
-      await databaseService.updateUserBalance(
-        userId,
-        gcAmount,
-        scAmount,
-        `Admin Adjustment: ${reason}`,
-      );
-
-      // Log the action
-      await this.createAuditLog("BALANCE_ADJUSTMENT", "user_balances", userId, {
-        gc_amount: gcAmount,
-        sc_amount: scAmount,
-        reason,
+      return await this.apiCall(`/users/${userId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: newStatus }),
       });
     } catch (error) {
-      console.error("Failed to adjust user balance:", error);
+      console.error(`Failed to update user ${userId} status:`, error);
       throw error;
     }
   }
 
-  async resetGameJackpot(gameId: string): Promise<void> {
+  async updateGameStatus(gameId: number, isActive: boolean): Promise<AdminGame> {
     this.checkAdminAccess();
-
     try {
-      await databaseService.query(
-        "UPDATE games SET current_jackpot_gc = 0, current_jackpot_sc = 0, total_profit_gc = 0, total_profit_sc = 0 WHERE game_id = $1",
-        [gameId],
-      );
-
-      // Log the action
-      await this.createAuditLog("JACKPOT_RESET", "games", 0, {
-        game_id: gameId,
+      return await this.apiCall(`/games/${gameId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_active: isActive }),
       });
     } catch (error) {
-      console.error("Failed to reset jackpot:", error);
+      console.error(`Failed to update game ${gameId} status:`, error);
       throw error;
     }
   }
 
-  async getSystemHealth(): Promise<any> {
+  async markNotificationRead(notificationId: number): Promise<AdminNotification> {
     this.checkAdminAccess();
-
     try {
-      // Check database connectivity
-      const dbCheck = await databaseService.query("SELECT 1");
-
-      // Check recent errors
-      const errorCount = await databaseService.query(`
-        SELECT COUNT(*) as count 
-        FROM admin_notifications 
-        WHERE notification_type = 'error' 
-        AND created_at > NOW() - INTERVAL '1 hour'
-      `);
-
-      // Check active sessions
-      const activeSessions = await databaseService.query(`
-        SELECT COUNT(*) as count 
-        FROM users 
-        WHERE last_login > NOW() - INTERVAL '15 minutes'
-      `);
-
-      return {
-        database: dbCheck.rows.length > 0 ? "healthy" : "error",
-        errors_last_hour: parseInt(errorCount.rows[0].count),
-        active_sessions: parseInt(activeSessions.rows[0].count),
-        timestamp: new Date().toISOString(),
-      };
+      return await this.apiCall(`/notifications/${notificationId}/read`, {
+        method: "POST",
+      });
     } catch (error) {
-      console.error("Failed to check system health:", error);
-      return {
-        database: "error",
-        errors_last_hour: 999,
-        active_sessions: 0,
-        timestamp: new Date().toISOString(),
-      };
+      console.error(`Failed to mark notification ${notificationId} as read:`, error);
+      throw error;
     }
   }
 
-  private async createAuditLog(
-    action: string,
-    table: string,
-    recordId: number,
-    data: any,
-  ): Promise<void> {
+  async updateUserBalance(
+    userId: number,
+    goldCoins: number,
+    sweepsCoins: number,
+    description: string
+  ): Promise<any> {
+    this.checkAdminAccess();
     try {
-      const user = authService.getCurrentUser();
-      await databaseService.query(
-        `
-        INSERT INTO audit_logs (user_id, action, table_name, record_id, new_values, created_at)
-        VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
-      `,
-        [user?.id, action, table, recordId, JSON.stringify(data)],
-      );
+      return await this.apiCall(`/balances/${userId}/update`, {
+        method: "POST",
+        body: JSON.stringify({
+          gold_coins: goldCoins,
+          sweeps_coins: sweepsCoins,
+          description,
+        }),
+      });
     } catch (error) {
-      console.error("Failed to create audit log:", error);
+      console.error(`Failed to update user ${userId} balance:`, error);
+      throw error;
     }
   }
 
-  // Real-time updates
-  private updateCallbacks: Map<string, (data: any) => void> = new Map();
+  // Fallback subscription system for real-time updates
+  private updateSubscribers: Map<
+    string,
+    ((data: any) => void)[]
+  > = new Map();
 
-  subscribeToUpdates(key: string, callback: (data: any) => void): () => void {
-    this.updateCallbacks.set(key, callback);
+  subscribeToUpdates(
+    channel: string,
+    callback: (data: any) => void
+  ): () => void {
+    if (!this.updateSubscribers.has(channel)) {
+      this.updateSubscribers.set(channel, []);
+    }
+    this.updateSubscribers.get(channel)!.push(callback);
 
-    // Start periodic updates for this subscription
+    // Poll for updates every 5 seconds
     const interval = setInterval(async () => {
       try {
-        if (key === "stats") {
+        if (channel === "stats") {
           const stats = await this.getDashboardStats();
           callback(stats);
-        } else if (key === "notifications") {
+        } else if (channel === "notifications") {
           const notifications = await this.getAdminNotifications();
           callback(notifications);
         }
       } catch (error) {
-        console.error(`Failed to update ${key}:`, error);
+        console.error(`Failed to fetch ${channel} updates:`, error);
       }
-    }, 5000); // Update every 5 seconds
+    }, 5000);
 
+    // Return unsubscribe function
     return () => {
-      this.updateCallbacks.delete(key);
       clearInterval(interval);
+      const callbacks = this.updateSubscribers.get(channel) || [];
+      const index = callbacks.indexOf(callback);
+      if (index > -1) {
+        callbacks.splice(index, 1);
+      }
     };
   }
 }
 
 export const adminService = AdminService.getInstance();
-export default adminService;

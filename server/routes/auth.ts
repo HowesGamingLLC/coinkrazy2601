@@ -1,4 +1,5 @@
 import express from "express";
+import jwt from "jsonwebtoken";
 import databaseService from "../services/database.js";
 
 const router = express.Router();
@@ -57,10 +58,17 @@ router.post("/login", async (req, res) => {
       [user.id]
     );
 
-    // Generate session token
-    const token = Math.random().toString(36).substring(2, 15) + 
-                  Math.random().toString(36).substring(2, 15) + 
-                  Date.now().toString(36);
+    // Generate JWT token
+    const token = jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role
+      },
+      process.env.JWT_SECRET || "your-secret-key",
+      { expiresIn: "7d" }
+    );
 
     // Clean user object (remove sensitive data)
     const cleanUser = {
