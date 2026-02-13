@@ -9,6 +9,7 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
+import AdminSetup from "./pages/AdminSetup";
 
 // Error Boundary to catch any React errors
 class ErrorBoundary extends React.Component<
@@ -792,35 +793,43 @@ const App = () => {
   return (
     <ErrorBoundary>
       <BrowserRouter>
-        <div
-          style={{
-            minHeight: "100vh",
-            backgroundColor: "#0d1117",
-            display: "flex",
-            overflow: "hidden",
-          }}
-        >
-          <McLuckSidebar />
-          <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-            <McLuckTopBar />
-            <div style={{ flex: 1, overflow: "auto" }}>
-              <Routes>
-                <Route path="/" element={<MainContent />} />
-                <Route path="/slots" element={<MainContent />} />
-                <Route path="/table-games" element={<MainContent />} />
-                <Route path="/live-games" element={<MainContent />} />
-                <Route path="/promotions" element={<MainContent />} />
-                <Route path="/loyalty" element={<MainContent />} />
-                <Route path="/shop" element={<MainContent />} />
-                <Route path="/prizes" element={<MainContent />} />
-                <Route path="/account" element={<MainContent />} />
-                <Route path="/help" element={<MainContent />} />
-                <Route path="*" element={<MainContent />} />
-              </Routes>
-            </div>
-            <BottomBar />
-          </div>
-        </div>
+        <Routes>
+          <Route path="/admin-setup" element={<AdminSetup />} />
+          <Route
+            path="*"
+            element={
+              <div
+                style={{
+                  minHeight: "100vh",
+                  backgroundColor: "#0d1117",
+                  display: "flex",
+                  overflow: "hidden",
+                }}
+              >
+                <McLuckSidebar />
+                <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+                  <McLuckTopBar />
+                  <div style={{ flex: 1, overflow: "auto" }}>
+                    <Routes>
+                      <Route path="/" element={<MainContent />} />
+                      <Route path="/slots" element={<MainContent />} />
+                      <Route path="/table-games" element={<MainContent />} />
+                      <Route path="/live-games" element={<MainContent />} />
+                      <Route path="/promotions" element={<MainContent />} />
+                      <Route path="/loyalty" element={<MainContent />} />
+                      <Route path="/shop" element={<MainContent />} />
+                      <Route path="/prizes" element={<MainContent />} />
+                      <Route path="/account" element={<MainContent />} />
+                      <Route path="/help" element={<MainContent />} />
+                      <Route path="*" element={<MainContent />} />
+                    </Routes>
+                  </div>
+                  <BottomBar />
+                </div>
+              </div>
+            }
+          />
+        </Routes>
       </BrowserRouter>
     </ErrorBoundary>
   );

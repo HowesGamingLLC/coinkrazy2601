@@ -1,13 +1,38 @@
 import express from "express";
 import databaseService from "../services/database.js";
+import { addAdmin } from "../scripts/addAdmin.js";
 
 const router = express.Router();
+
+// Add custom admin endpoint
+router.post("/add-admin", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        error: "Email and password are required",
+      });
+    }
+
+    const result = await addAdmin(email, password);
+    res.json(result);
+  } catch (error) {
+    console.error("Error adding admin:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to add admin user",
+      details: error.message,
+    });
+  }
+});
 
 // Initialize admin user endpoint
 router.post("/init-admin", async (req, res) => {
   try {
-    const adminEmail = "coinkrazy00@gmail.com";
-    const adminPassword = "Woot6969!";
+    const adminEmail = req.body?.email || "coinkrazy00@gmail.com";
+    const adminPassword = req.body?.password || "Woot6969!";
 
     // Check if admin already exists
     const existingAdmin = await databaseService.getUserByEmail(adminEmail);

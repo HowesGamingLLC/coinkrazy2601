@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { CheckCircle, AlertTriangle, Loader2, Shield } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { seedService } from "@/services/seedService";
 
 export default function AdminSetup() {
@@ -12,6 +13,9 @@ export default function AdminSetup() {
     message?: string;
     error?: string;
   } | null>(null);
+  const [customEmail, setCustomEmail] = useState("");
+  const [customPassword, setCustomPassword] = useState("");
+  const [isAddingCustom, setIsAddingCustom] = useState(false);
 
   const handleSeedDatabase = async () => {
     setIsSeeding(true);
@@ -56,6 +60,48 @@ export default function AdminSetup() {
     }
   };
 
+  const handleAddCustomAdmin = async () => {
+    if (!customEmail || !customPassword) {
+      setResult({
+        success: false,
+        error: "Please enter both email and password",
+      });
+      return;
+    }
+
+    setIsAddingCustom(true);
+    setResult(null);
+
+    try {
+      const response = await fetch("/api/add-admin", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: customEmail,
+          password: customPassword,
+        }),
+      });
+
+      const data = await response.json();
+      setResult(data);
+
+      if (data.success) {
+        setCustomEmail("");
+        setCustomPassword("");
+      }
+    } catch (error) {
+      setResult({
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to add admin user",
+      });
+    } finally {
+      setIsAddingCustom(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-md border-gold-500/20">
@@ -93,7 +139,7 @@ export default function AdminSetup() {
           <div className="space-y-3">
             <Button
               onClick={handleSeedDatabase}
-              disabled={isSeeding}
+              disabled={isSeeding || isAddingCustom}
               className="w-full bg-gradient-to-r from-gold-500 to-gold-600 hover:from-gold-600 hover:to-gold-700 text-black font-bold"
             >
               {isSeeding ? (
@@ -110,7 +156,7 @@ export default function AdminSetup() {
 
             <Button
               onClick={handleInitAdmin}
-              disabled={isSeeding}
+              disabled={isSeeding || isAddingCustom}
               variant="outline"
               className="w-full"
             >
@@ -123,6 +169,43 @@ export default function AdminSetup() {
                 "Create Admin Only"
               )}
             </Button>
+
+            <div className="text-center text-xs text-muted-foreground">OR</div>
+
+            <div className="space-y-2 border border-border/50 rounded-lg p-3 bg-muted/20">
+              <div className="text-sm font-medium">Add Custom Admin</div>
+              <Input
+                type="email"
+                placeholder="Email"
+                value={customEmail}
+                onChange={(e) => setCustomEmail(e.target.value)}
+                disabled={isAddingCustom || isSeeding}
+                className="text-xs"
+              />
+              <Input
+                type="password"
+                placeholder="Password"
+                value={customPassword}
+                onChange={(e) => setCustomPassword(e.target.value)}
+                disabled={isAddingCustom || isSeeding}
+                className="text-xs"
+              />
+              <Button
+                onClick={handleAddCustomAdmin}
+                disabled={isSeeding || isAddingCustom || !customEmail || !customPassword}
+                variant="secondary"
+                className="w-full text-sm"
+              >
+                {isAddingCustom ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Adding Admin...
+                  </>
+                ) : (
+                  "Add Admin User"
+                )}
+              </Button>
+            </div>
           </div>
 
           <div className="bg-muted/20 rounded-lg p-3 border border-border/50 text-sm">
