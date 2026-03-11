@@ -1,0 +1,169 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database (Neon alternative for local development)
+  postgres:
+    image: postgres:16-alpine
+    container_name: coinkrazy-postgres
+    environment:
+      POSTGRES_USER: coinkrazy
+      POSTGRES_PASSWORD: coinkrazy_dev_password
+      POSTGRES_DB: coinkrazy_db
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./server/database/banking-schema.sql:/docker-entrypoint-initdb.d/01-banking-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coinkrazy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - coinkrazy-network
+
+  # Redis for caching and sessions
+  redis:
+    image: redis:7-alpine
+    container_name: coinkrazy-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - coinkrazy-network
+
+  # Application (Node.js)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: coinkrazy-app
+    environment:
+      NODE_ENV: production
+      
+      # Database
+      DATABASE_URL: postgresql://coinkrazy:coinkrazy_dev_password@postgres:5432/coinkrazy_db
+      
+      # JWT
+      JWT_SECRET: ${JWT_SECRET:-coinkrazy_jwt_secret_key_change_in_production}
+      SESSION_SECRET: ${SESSION_SECRET:-coinkrazy_session_secret_change_in_production}
+      
+      # Application URLs
+      VITE_APP_NAME: CoinKrazy
+      VITE_APP_URL: ${APP_URL:-http://localhost:3000}
+      VITE_API_URL: ${API_URL:-http://localhost:3001}
+      
+      # Email Service (Gmail)
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-your_email@gmail.com}
+      SMTP_PASS: ${SMTP_PASS:-your_app_password}
+      FROM_EMAIL: ${FROM_EMAIL:-noreply@coinkrazy.com}
+      
+      # Payment Processing - Stripe
+      STRIPE_PUBLIC_KEY: ${STRIPE_PUBLIC_KEY:-pk_live_your_stripe_public_key}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_live_your_stripe_secret_key}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_live_your_webhook_secret}
+      
+      # Payment Processing - PayPal
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-your_paypal_client_id}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-your_paypal_client_secret}
+      
+      # Payment Processing - Square
+      SQUARE_ACCESS_TOKEN: ${SQUARE_ACCESS_TOKEN:-sq_live_your_access_token}
+      SQUARE_APPLICATION_ID: ${SQUARE_APPLICATION_ID:-sq_app_your_app_id}
+      SQUARE_LOCATION_ID: ${SQUARE_LOCATION_ID:-your_location_id}
+      
+      # Payment Processing - CashApp
+      CASHAPP_API_KEY: ${CASHAPP_API_KEY:-ca_api_your_api_key}
+      CASHAPP_CLIENT_ID: ${CASHAPP_CLIENT_ID:-ca_client_your_client_id}
+      
+      # ACH Processing
+      DWOLLA_TOKEN: ${DWOLLA_TOKEN:-prod_your_dwolla_token}
+      DWOLLA_FUNDING_SOURCE: ${DWOLLA_FUNDING_SOURCE:-your_funding_source}
+      
+      # External Game Providers
+      PRAGMATIC_API_KEY: ${PRAGMATIC_API_KEY:-your_pragmatic_api_key}
+      NETENT_API_KEY: ${NETENT_API_KEY:-your_netent_api_key}
+      
+      # Analytics & Monitoring
+      GOOGLE_ANALYTICS_ID: ${GOOGLE_ANALYTICS_ID:-G-XXXXXXXXXX}
+      SENTRY_DSN: ${SENTRY_DSN:-https://your-sentry-dsn}
+      
+      # Redis
+      REDIS_URL: redis://redis:6379
+      
+      # Server configuration
+      PORT: 3001
+      HOST: 0.0.0.0
+    ports:
+      - "3000:3000"    # Frontend Vite dev server
+      - "3001:3001"    # Backend API server
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+      - /app/node_modules
+      - /app/dist
+    networks:
+      - coinkrazy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Nginx Reverse Proxy (Optional, for production-like setup)
+  nginx:
+    image: nginx:alpine
+    container_name: coinkrazy-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl/cert.pem:/etc/nginx/cert.pem:ro
+      - ./ssl/key.pem:/etc/nginx/key.pem:ro
+    depends_on:
+      - app
+    networks:
+      - coinkrazy-network
+    profiles:
+      - production
+
+  # PgAdmin for database management (Optional, dev only)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: coinkrazy-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@coinkrazy.local
+      PGADMIN_DEFAULT_PASSWORD: admin_password
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - coinkrazy-network
+    profiles:
+      - dev
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  coinkrazy-network:
+    driver: bridge

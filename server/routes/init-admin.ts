@@ -31,8 +31,8 @@ router.post("/add-admin", async (req, res) => {
 // Initialize admin user endpoint
 router.post("/init-admin", async (req, res) => {
   try {
-    const adminEmail = req.body?.email || "coinkrazy00@gmail.com";
-    const adminPassword = req.body?.password || "Woot6969!";
+    const adminEmail = req.body?.email || "coinkrazy26@gmail.com";
+    const adminPassword = req.body?.password || "admin123";
 
     // Check if admin already exists
     const existingAdmin = await databaseService.getUserByEmail(adminEmail);

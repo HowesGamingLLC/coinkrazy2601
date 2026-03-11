@@ -5,6 +5,7 @@ import databaseService from "../services/database.js";
 import { authenticateToken, requireAdmin } from "../middleware/auth.js";
 import bankingRoutes from "./banking.js";
 import scratchCardRoutes from "./scratchCards.js";
+import redemptionRoutes from "./redemptions.js";
 
 const router = express.Router();
 
@@ -13,6 +14,9 @@ router.use("/banking", bankingRoutes);
 
 // Mount scratch card routes
 router.use("/scratch-cards", scratchCardRoutes);
+
+// Mount redemption routes
+router.use("/redemptions", redemptionRoutes);
 
 // Authentication endpoints
 router.post("/auth/login", async (req, res) => {
