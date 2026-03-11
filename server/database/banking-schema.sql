@@ -309,7 +309,7 @@ CREATE INDEX IF NOT EXISTS idx_risk_assessments_user_id ON risk_assessments(user
 
 -- Insert default payment providers
 INSERT INTO payment_providers (name, type, status, supported_currencies, supported_countries, configuration, fees, limits, processing_times) VALUES
-('Stripe', 'stripe', 'active', '{"USD","EUR","GBP","CAD"}', '{"US","CA","UK","EU"}', 
+('Stripe', 'stripe', 'active', '{"USD","EUR","GBP","CAD"}', '{"US","CA","UK","EU"}',
  '{"publishable_key":"pk_live_...", "webhook_secret":"whsec_..."}',
  '{"deposit_percent":2.9, "deposit_fixed":0.30, "withdrawal_percent":3.5, "withdrawal_fixed":0.50}',
  '{"min_deposit":5, "max_deposit":5000, "min_withdrawal":10, "max_withdrawal":2000, "daily_limit":10000}',
@@ -326,13 +326,34 @@ INSERT INTO payment_providers (name, type, status, supported_currencies, support
  '{"deposit_percent":1.0, "deposit_fixed":0, "withdrawal_percent":0.5, "withdrawal_fixed":0}',
  '{"min_deposit":25, "max_deposit":10000, "min_withdrawal":50, "max_withdrawal":5000, "daily_limit":25000}',
  '{"deposit":"1-6 confirmations", "withdrawal":"1-2 hours"}'
+),
+('Square', 'square', 'active', '{"USD"}', '{"US"}',
+ '{"application_id":"sq_app_...", "access_token":"sq_token_..."}',
+ '{"deposit_percent":2.5, "deposit_fixed":0.30, "withdrawal_percent":0, "withdrawal_fixed":0}',
+ '{"min_deposit":1, "max_deposit":2500, "min_withdrawal":50, "max_withdrawal":5000, "daily_limit":10000}',
+ '{"deposit":"instant", "withdrawal":"1-3 business days"}'
+),
+('CashApp', 'cashapp', 'active', '{"USD"}', '{"US"}',
+ '{"api_key":"ca_api_...", "client_id":"ca_client_..."}',
+ '{"deposit_percent":0, "deposit_fixed":0, "withdrawal_percent":2.1, "withdrawal_fixed":5.00}',
+ '{"min_deposit":1, "max_deposit":10000, "min_withdrawal":100, "max_withdrawal":5000, "daily_limit":20000}',
+ '{"deposit":"instant", "withdrawal":"1-2 business days"}'
+),
+('ACH Bank Transfer', 'ach', 'active', '{"USD"}', '{"US"}',
+ '{"processor":"ach_processor", "routing_required":true}',
+ '{"deposit_percent":0, "deposit_fixed":0, "withdrawal_percent":0, "withdrawal_fixed":0}',
+ '{"min_deposit":25, "max_deposit":50000, "min_withdrawal":100, "max_withdrawal":25000, "daily_limit":50000}',
+ '{"deposit":"1-3 business days", "withdrawal":"1-3 business days"}'
 ) ON CONFLICT (name) DO NOTHING;
 
 -- Insert default payment methods
-INSERT INTO payment_methods (provider_id, name, type, status, min_deposit, max_deposit, min_withdrawal, max_withdrawal, daily_limit, deposit_fee_percent, withdrawal_fee_percent, requires_kyc, auto_approve_deposits, auto_approve_deposit_limit) VALUES
-(1, 'Visa/Mastercard', 'credit_card', 'active', 5, 5000, 10, 2000, 10000, 2.9, 3.5, true, true, 1000),
-(2, 'PayPal', 'e_wallet', 'active', 10, 3000, 25, 1500, 5000, 3.5, 2.9, true, true, 500),
-(3, 'Bitcoin', 'crypto', 'active', 25, 10000, 50, 5000, 25000, 1.0, 0.5, false, true, 2000)
+INSERT INTO payment_methods (provider_id, name, type, status, min_deposit, max_deposit, min_withdrawal, max_withdrawal, daily_limit, deposit_fee_percent, deposit_fee_fixed, withdrawal_fee_percent, withdrawal_fee_fixed, requires_kyc, auto_approve_deposits, auto_approve_deposit_limit) VALUES
+(1, 'Visa/Mastercard', 'credit_card', 'active', 5, 5000, 10, 2000, 10000, 2.9, 0.30, 3.5, 0.50, true, true, 1000),
+(2, 'PayPal', 'e_wallet', 'active', 10, 3000, 25, 1500, 5000, 3.5, 0.49, 2.9, 0.30, true, true, 500),
+(3, 'Bitcoin', 'crypto', 'active', 25, 10000, 50, 5000, 25000, 1.0, 0, 0.5, 0, false, true, 2000),
+(4, 'Square Cash', 'e_wallet', 'active', 1, 2500, 50, 5000, 10000, 2.5, 0.30, 0, 0, true, true, 1000),
+(5, 'CashApp', 'e_wallet', 'active', 1, 10000, 100, 5000, 20000, 0, 0, 2.1, 5.00, true, false, 0),
+(6, 'Bank Transfer (ACH)', 'bank_transfer', 'active', 25, 50000, 100, 25000, 50000, 0, 0, 0, 0, true, false, 0)
 ON CONFLICT DO NOTHING;
 
 -- Insert default banking settings

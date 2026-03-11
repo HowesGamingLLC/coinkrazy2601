@@ -1,0 +1,27 @@
+version: '3.8'
+
+# This file overrides docker-compose.yml for local development
+# It enables hot-reloading, enables pgadmin, and sets development-friendly settings
+
+services:
+  app:
+    command: npm run dev
+    environment:
+      NODE_ENV: development
+      DEBUG: 'true'
+    ports:
+      - "5173:5173"  # Vite dev server port
+      - "3001:3001"  # Express API server port
+    volumes:
+      - ./client:/app/client
+      - ./server:/app/server
+      - ./shared:/app/shared
+      - /app/node_modules
+
+  pgadmin:
+    profiles:
+      - ""  # Enable by default in dev
+
+  nginx:
+    profiles:
+      - production  # Disabled in dev by default
